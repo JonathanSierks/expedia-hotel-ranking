@@ -27,12 +27,59 @@ print("Loading Train & Test Parquet data...")
 train_df = pl.read_parquet(DATA_PROCESSED_TRAIN_PATH)
 test_df = pl.read_parquet(DATA_PROCESSED_TEST_PATH)
 
+# ==========================================================
+# Clip outliers
+# ==========================================================
+
+def clip_outliers(df):
+
+    # helper quantiles
+    price_low, price_high = df.select([
+        pl.col("price_usd").quantile(0.001).alias("price_low"),
+        pl.col("price_usd").quantile(0.999).alias("price_high")
+    ]).row(0)
+
+    book_high = df.select([
+        pl.col("srch_booking_window").quantile(0.999).alias("booking_window_high")
+    ]).item()
+
+    stay_high = df.select([
+        pl.col("srch_length_of_stay").quantile(0.999).alias("los_low")
+    ]).item()
+
+    df = df.with_columns([
+
+        # price clipping
+        pl.col("price_usd")
+        .clip(price_low, price_high)
+        .alias("price_usd"),
+
+        # booking window clipping
+        pl.col("srch_booking_window")
+        .clip(0, book_high)
+        .alias("srch_booking_window"),
+
+        # length of stay clipping
+        pl.col("srch_length_of_stay")
+        .clip(1, stay_high)
+        .alias("srch_length_of_stay"),
+    ])
+
+    return df
+
 
 # =========================================================
 # FEATURE ENGINEERING
 # =========================================================
 
 def engineer_features(df):
+    # =====================================================
+    # Add log price
+    # =====================================================
+    df = df.with_columns([
+        pl.col("price_usd").log1p().alias("log_price_usd")
+    ])
+
 
     # =====================================================
     # QUERY-LEVEL AGGREGATES
@@ -42,6 +89,9 @@ def engineer_features(df):
 
         pl.col("price_usd").mean().alias("query_price_mean"),
         pl.col("price_usd").std().alias("query_price_std"),
+
+        pl.col("log_price_usd").mean().alias("query_log_price_mean"),
+        pl.col("log_price_usd").std().alias("query_log_price_std"),
 
         pl.col("prop_starrating")
         # .filter(pl.col("prop_starrating") > 0)
@@ -79,6 +129,14 @@ def engineer_features(df):
         (
             (pl.col("price_usd") - pl.col("query_price_mean")) / (pl.col("query_price_std") + 1e-6)
         ).alias("price_zscore"),
+
+        (
+            pl.col("log_price_usd") - pl.col("query_log_price_mean")
+        ).alias("log_price_diff_from_mean"),
+
+        (
+            (pl.col("log_price_usd") - pl.col("query_log_price_mean")) / (pl.col("query_log_price_std") + 1e-6)
+        ).alias("log_price_zscore"),
 
         (
             pl.col("price_usd").rank("ordinal").over("srch_id")
@@ -283,6 +341,15 @@ def engineer_features(df):
     ])
 
     return df
+
+# =========================================================
+# Clip outliers
+# =========================================================
+
+train_df = clip_outliers(train_df)
+test_df = clip_outliers(test_df)
+
+
 
 # =========================================================
 # ENGINEER FEATURES
