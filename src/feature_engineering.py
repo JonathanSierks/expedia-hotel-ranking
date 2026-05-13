@@ -11,9 +11,6 @@ pl.Config.set_fmt_str_lengths(100)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-DATA_PROCESSED_TRAIN_PATH = BASE_DIR / "data" / "processed" / "training_set_VU_DM.parquet"
-DATA_PROCESSED_TEST_PATH = BASE_DIR / "data" / "processed" / "test_set_VU_DM.parquet"
-
 DATA_PROCESSED_DIR = BASE_DIR / "data" / "processed"
 DATA_FEATURED_DIR = BASE_DIR / "data" / "featured"
 
@@ -47,12 +44,12 @@ def engineer_features(df):
         pl.col("price_usd").std().alias("query_price_std"),
 
         pl.col("prop_starrating")
-        .filter(pl.col("prop_starrating") > 0)
+        # .filter(pl.col("prop_starrating") > 0)
         .mean()
         .alias("query_star_mean"),
 
         pl.col("prop_review_score")
-        .filter(pl.col("prop_review_score") > 0)
+        # .filter(pl.col("prop_review_score") > 0)
         .mean()
         .alias("query_review_mean"),
 
@@ -172,11 +169,11 @@ def engineer_features(df):
 
     df = df.with_columns([
 
-        sum([(pl.col(c) == -1).cast(pl.Int8) for c in comp_rate_cols]).alias("num_comp_cheaper"),
+        sum([(pl.col(c) == -1).cast(pl.Int8).fill_null(0) for c in comp_rate_cols]).alias("num_comp_cheaper"),
 
-        sum([(pl.col(c) == 1).cast(pl.Int8) for c in comp_rate_cols]).alias("num_comp_more_expensive"),
+        sum([(pl.col(c) == 1).cast(pl.Int8).fill_null(0) for c in comp_rate_cols]).alias("num_comp_more_expensive"),
 
-        sum([(pl.col(c) == 1).cast(pl.Int8) for c in comp_inv_cols]).alias("competitor_availability_pressure"),
+        sum([(pl.col(c) == 1).cast(pl.Int8).fill_null(0) for c in comp_inv_cols]).alias("competitor_availability_pressure"),
 
         pl.mean_horizontal(comp_diff_cols).alias("avg_comp_price_diff"),
     ])
@@ -231,7 +228,7 @@ def engineer_features(df):
     # =====================================================
 
     df = df.with_columns([
-        pl.col("price_usd") - pl.col("prop_log_historical_price").exp().alias("price_vs_historical")
+        (pl.col("price_usd") - pl.col("prop_log_historical_price").exp()).alias("price_vs_historical")
     ])
 
     # =====================================================
@@ -239,7 +236,7 @@ def engineer_features(df):
     # =====================================================
 
     df = df.with_columns([
-        pl.col("promotion_flag") * pl.col("price_diff_from_mean").alias("promotion_price_interaction")
+        (pl.col("promotion_flag") * pl.col("price_diff_from_mean")).alias("promotion_price_interaction")
     ])
 
     # =====================================================
@@ -322,12 +319,8 @@ missing_values(test_df, "test dataset")
 
 print("Saving feature parquet files...")
 
-train_df.write_parquet(
-    DATA_FEATURED_DIR / "train_features.parquet"
-)
+train_df.write_parquet(DATA_FEATURED_DIR / "train_features.parquet")
 
-test_df.write_parquet(
-    DATA_FEATURED_DIR / "test_features.parquet"
-)
+test_df.write_parquet(DATA_FEATURED_DIR / "test_features.parquet")
 
 print("Feature engineering complete!")
