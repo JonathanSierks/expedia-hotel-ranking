@@ -89,9 +89,13 @@ def engineer_features(df):
 
         pl.col("price_usd").mean().alias("query_price_mean"),
         pl.col("price_usd").std().alias("query_price_std"),
+        pl.col("price_usd").min().alias("query_price_min"),
+        pl.col("price_usd").max().alias("query_price_max"),
 
         pl.col("log_price_usd").mean().alias("query_log_price_mean"),
         pl.col("log_price_usd").std().alias("query_log_price_std"),
+        pl.col("log_price_usd").min().alias("query_log_price_min"),
+        pl.col("log_price_usd").max().alias("query_log_price_max"),
 
         pl.col("prop_starrating")
         # .filter(pl.col("prop_starrating") > 0)
@@ -103,13 +107,16 @@ def engineer_features(df):
         .mean()
         .alias("query_review_mean"),
 
-        pl.col("prop_location_score1")
-        .mean()
-        .alias("query_location_mean1"),
+        pl.col("prop_review_score").min().alias("query_review_min"),
+        pl.col("prop_review_score").max().alias("query_review_max"),
 
-        pl.col("prop_location_score2")
-        .mean()
-        .alias("query_location_mean2"),
+        pl.col("prop_location_score1").mean().alias("query_location_mean1"),
+
+        pl.col("prop_location_score1").max().alias("query_location_max1"),
+
+        pl.col("prop_location_score2").mean().alias("query_location_mean2"),
+
+        pl.col("prop_location_score1").max().alias("query_location_max1"),
 
         pl.len().alias("query_hotel_count")
     ])
@@ -142,6 +149,11 @@ def engineer_features(df):
             pl.col("price_usd").rank("ordinal").over("srch_id")
         ).alias("price_rank"),
 
+
+        (
+            pl.col("price_usd").rank("ordinal").over("srch_id") / pl.col("query_hotel_count")
+        ).alias("price_pct_rank"),
+
         (
             pl.col("price_usd") == pl.col("price_usd").min().over("srch_id")
         ).cast(pl.Int8).alias("cheapest_hotel_flag"),
@@ -160,6 +172,10 @@ def engineer_features(df):
         (
             pl.col("prop_starrating").rank("ordinal").over("srch_id")
         ).alias("star_rank"),
+
+        (
+            pl.col("prop_starrating").rank("ordinal").over("srch_id") / pl.col("query_hotel_count")
+        ).alias("star_pct_rank"),
     ])
 
     # =====================================================
@@ -175,6 +191,10 @@ def engineer_features(df):
         (
             pl.col("prop_review_score").rank("ordinal").over("srch_id")
         ).alias("review_rank"),
+
+        (
+            pl.col("prop_review_score").rank("ordinal").over("srch_id") / pl.col("query_hotel_count")
+        ).alias("review_pct_rank"),
     ])
 
     # =====================================================
