@@ -57,21 +57,28 @@ dest_stats = train_split.groupby("srch_destination_id").agg(
     dest_count=("booking_bool", "count"),
 ).reset_index()
 
+# Per-property-destination stats (hotel performance in specific destination context)
+prop_dest_stats = train_split.groupby(["prop_id", "srch_destination_id"]).agg(
+    prop_dest_book_rate=("booking_bool", "mean"),
+    prop_dest_count=("booking_bool", "count"),
+).reset_index()
+
 # Global averages for filling unknown hotels/destinations in val/test
 global_click_rate = train_split["click_bool"].mean()
 global_book_rate = train_split["booking_bool"].mean()
 
 print(f"  {len(prop_stats):,} unique properties with stats")
 print(f"  {len(dest_stats):,} unique destinations with stats")
+print(f"  {len(prop_dest_stats):,} unique property-destination pairs with stats")
 
 
 # FEATURE ENGINEERING
 print("\nEngineering features")
 
-def engineer_features(df, prop_stats, dest_stats, global_click_rate, global_book_rate):
+def engineer_features(df, prop_stats, dest_stats, prop_dest_stats, global_click_rate, global_book_rate):
     f = pd.DataFrame(index=df.index)
 
-    # Raw features (ones with signal from EDA correlation analysis)
+    # ── Raw features (ones with signal from EDA correlation analysis) ──
     raw_cols = [
         "prop_starrating", "prop_review_score", "prop_brand_bool",
         "prop_location_score1", "prop_location_score2",
@@ -85,13 +92,13 @@ def engineer_features(df, prop_stats, dest_stats, global_click_rate, global_book
         if col in df.columns:
             f[col] = df[col].astype("float32")
 
-    # Missing value indicators
+    # ── Missing value indicators ──
     f["missing_visitor_hist"] = df["visitor_hist_starrating"].isna().astype("int8")
     f["missing_review_score"] = df["prop_review_score"].isna().astype("int8")
     f["missing_distance"] = df["orig_destination_distance"].isna().astype("int8")
     f["missing_affinity"] = df["srch_query_affinity_score"].isna().astype("int8")
 
-    # Visitor history
+    # ── Visitor history ──
     f["visitor_hist_starrating"] = df["visitor_hist_starrating"].fillna(0).astype("float32")
     f["visitor_hist_adr_usd"] = df["visitor_hist_adr_usd"].fillna(0).astype("float32")
 
@@ -99,24 +106,35 @@ def engineer_features(df, prop_stats, dest_stats, global_click_rate, global_book
     f["star_diff"] = (df["prop_starrating"] - df["visitor_hist_starrating"].fillna(df["prop_starrating"])).astype("float32")
     f["price_diff_hist"] = (df["price_usd"] - df["visitor_hist_adr_usd"].fillna(df["price_usd"])).astype("float32")
 
-    # Price relative to search group
+    # ── Price relative to search group ──
     grp = df.groupby("srch_id")["price_usd"]
     search_mean_price = grp.transform("mean")
+    search_median_price = grp.transform("median")
     search_min_price = grp.transform("min")
 
     f["price_vs_mean"] = (df["price_usd"] / search_mean_price.replace(0, 1)).astype("float32")
+    f["price_vs_median"] = (df["price_usd"] / search_median_price.replace(0, 1)).astype("float32")
     f["price_rank_in_search"] = grp.rank(method="min").astype("float32")
     f["is_cheapest"] = (df["price_usd"] == search_min_price).astype("int8")
 
-    # Star & review ranking within search
+    # ── Star & review ranking within search ──
     f["star_rank_in_search"] = df.groupby("srch_id")["prop_starrating"].rank(method="min", ascending=False).astype("float32")
     review_filled = df["prop_review_score"].fillna(0)
     f["review_rank_in_search"] = review_filled.groupby(df["srch_id"]).rank(method="min", ascending=False).astype("float32")
 
-    # Location score combined
+    # ── Location score ranking within search ──
+    # EDA: prop_location_score2 has strongest feature correlation (0.066)
+    # Ranking it within search captures "best located hotel in these results"
+    loc_filled = df["prop_location_score2"].fillna(0)
+    f["location2_rank_in_search"] = loc_filled.groupby(df["srch_id"]).rank(method="min", ascending=False).astype("float32")
+
+    # ── Location score combined ──
     f["location_combined"] = (df["prop_location_score1"].fillna(0) + df["prop_location_score2"].fillna(0)).astype("float32")
 
-    #Competitor aggregates
+    # ── Search size (more hotels = more competition) ──
+    f["search_size"] = df.groupby("srch_id")["prop_id"].transform("count").astype("float32")
+
+    # ── Competitor aggregates ──
     comp_rate_cols = [f"comp{i}_rate" for i in range(1, 9)]
     comp_inv_cols = [f"comp{i}_inv" for i in range(1, 9)]
     existing_rate_cols = [c for c in comp_rate_cols if c in df.columns]
@@ -131,42 +149,58 @@ def engineer_features(df, prop_stats, dest_stats, global_click_rate, global_book
         comp_inv = df[existing_inv_cols]
         f["comp_no_inventory_count"] = (comp_inv == 1).sum(axis=1).astype("int8")
 
-    #Derived
+    # ── Derived price features ──
     total_guests = (df["srch_adults_count"] + df["srch_children_count"]).replace(0, 1)
     f["price_per_person"] = (df["price_usd"] / total_guests).astype("float32")
     f["total_cost"] = (df["price_usd"] * df["srch_length_of_stay"]).astype("float32")
 
-    # Price vs historical price (is this hotel discounted right now?)
+    # Is this hotel discounted vs its usual price?
     hist_price = np.exp(df["prop_log_historical_price"]).replace(0, 1)
     f["price_vs_historical"] = (df["price_usd"] / hist_price).astype("float32")
 
-    # Price per night
     f["price_per_night"] = (df["price_usd"] / df["srch_length_of_stay"].replace(0, 1)).astype("float32")
 
-    # Value: star rating per dollar (scaled for readability)
+    # Value for money
     f["star_per_dollar"] = (df["prop_starrating"] / df["price_usd"].replace(0, 1) * 100).astype("float32")
 
-    #Per-property historical stats
-    # Some hotels consistently get booked more — this captures hotel quality
-    # beyond what star rating and review score tell us
+    # ── Interaction features ──
+    # Logistic regression can't learn interactions on its own
+    # These capture non-linear relationships between price and quality
+    f["price_x_stars"] = (df["price_usd"] * df["prop_starrating"]).astype("float32")
+    f["price_x_review"] = (df["price_usd"] * df["prop_review_score"].fillna(0)).astype("float32")
+    f["price_x_location"] = (df["price_usd"] * df["prop_location_score2"].fillna(0)).astype("float32")
+
+    # Last-minute bookings behave differently from planned trips
+    f["window_x_price"] = (df["srch_booking_window"] * df["price_usd"]).astype("float32")
+
+    # Premium = good location + high stars
+    f["location_x_stars"] = (df["prop_location_score2"].fillna(0) * df["prop_starrating"]).astype("float32")
+
+    # ── Per-property historical stats ──
     merged_prop = df[["prop_id"]].merge(prop_stats, on="prop_id", how="left")
     f["prop_click_rate"] = merged_prop["prop_click_rate"].fillna(global_click_rate).astype("float32").values
     f["prop_book_rate"] = merged_prop["prop_book_rate"].fillna(global_book_rate).astype("float32").values
     f["prop_count"] = merged_prop["prop_count"].fillna(0).astype("float32").values
 
-    #Per-destination historical stats
-    # Some destinations have higher booking rates
+    # ── Per-destination historical stats ──
     merged_dest = df[["srch_destination_id"]].merge(dest_stats, on="srch_destination_id", how="left")
     f["dest_click_rate"] = merged_dest["dest_click_rate"].fillna(global_click_rate).astype("float32").values
     f["dest_book_rate"] = merged_dest["dest_book_rate"].fillna(global_book_rate).astype("float32").values
     f["dest_count"] = merged_dest["dest_count"].fillna(0).astype("float32").values
 
+    # ── Per-property-destination stats (hotel performance in this specific destination) ──
+    merged_pd = df[["prop_id", "srch_destination_id"]].merge(
+        prop_dest_stats, on=["prop_id", "srch_destination_id"], how="left"
+    )
+    f["prop_dest_book_rate"] = merged_pd["prop_dest_book_rate"].fillna(global_book_rate).astype("float32").values
+    f["prop_dest_count"] = merged_pd["prop_dest_count"].fillna(0).astype("float32").values
+
     f = f.fillna(0)
     return f
 
 
-train_features = engineer_features(dfTrain, prop_stats, dest_stats, global_click_rate, global_book_rate)
-test_features = engineer_features(dfTest, prop_stats, dest_stats, global_click_rate, global_book_rate)
+train_features = engineer_features(dfTrain, prop_stats, dest_stats, prop_dest_stats, global_click_rate, global_book_rate)
+test_features = engineer_features(dfTest, prop_stats, dest_stats, prop_dest_stats, global_click_rate, global_book_rate)
 feature_cols = train_features.columns.tolist()
 print(f"  {len(feature_cols)} features created")
 
@@ -175,10 +209,6 @@ print(f"  {len(feature_cols)} features created")
 X_train = train_features.loc[train_mask]
 X_val = train_features.loc[val_mask]
 
-# Combined target: booking=1 (highest priority), click_only=1 (also positive signal)
-# Both clicks and bookings indicate user interest, so we train a single model
-# that predicts "user engaged with this hotel" — then use sample weights
-# to make bookings count more than clicks during training
 y_train_click = dfTrain.loc[train_mask, "click_bool"].values
 y_train_book = dfTrain.loc[train_mask, "booking_bool"].values
 y_val_click = dfTrain.loc[val_mask, "click_bool"].values
@@ -219,8 +249,6 @@ def compute_ndcg5(srch_ids, preds, click_bools, booking_bools):
 
 
 # HYPERPARAMETER TUNING
-# Single model with sample weights: bookings get weight 5, clicks get weight 1
-# This mirrors the NDCG relevance grades in the loss function
 print("\nTuning hyperparameters")
 
 param_grid = {
@@ -233,20 +261,17 @@ print(f"  Testing {len(param_combos)} combinations:\n")
 
 best_ndcg = -1
 best_params = None
-best_weight = 5
 all_results = []
 
 val_srch_ids = dfTrain.loc[val_mask, "srch_id"].values
 val_clicks = dfTrain.loc[val_mask, "click_bool"].values
 val_books = dfTrain.loc[val_mask, "booking_bool"].values
 
-# Sample weights: base weight 1 for clicks, higher weight for bookings
-# This tells the model "getting bookings right matters more"
 for i, (C, penalty) in enumerate(param_combos):
     print(f"  [{i+1}/{len(param_combos)}] C={C:<6}, penalty={penalty}", end=" ... ")
 
     sample_weights = np.ones(len(y_train_engaged))
-    sample_weights[y_train_book == 1] = 5  # bookings matter more
+    sample_weights[y_train_book == 1] = 5
 
     model = LogisticRegression(
         C=C, penalty=penalty, solver="saga",
@@ -273,7 +298,6 @@ pd.DataFrame(all_results).sort_values("ndcg5", ascending=False).to_csv("tuning_r
 
 
 # BOOKING WEIGHT TUNING
-# The booking weight of 5 mirrors NDCG but may not be optimal
 print("\nTuning booking sample weight with best model")
 
 best_weight_ndcg = -1
@@ -306,10 +330,9 @@ print(f"\n  BEST WEIGHT: {best_booking_weight} -> NDCG@5 = {best_weight_ndcg:.5f
 pd.DataFrame(weight_results).sort_values("ndcg5", ascending=False).to_csv("weight_results.csv", index=False)
 
 
-#RETRAIN ON FULL TRAINING SET
+# RETRAIN ON FULL TRAINING SET
 print("\nRetraining best model on full training data")
 
-# Recompute property/destination stats on FULL training set for final model
 prop_stats_full = dfTrain.groupby("prop_id").agg(
     prop_click_rate=("click_bool", "mean"),
     prop_book_rate=("booking_bool", "mean"),
@@ -322,11 +345,16 @@ dest_stats_full = dfTrain.groupby("srch_destination_id").agg(
     dest_count=("booking_bool", "count"),
 ).reset_index()
 
+prop_dest_stats_full = dfTrain.groupby(["prop_id", "srch_destination_id"]).agg(
+    prop_dest_book_rate=("booking_bool", "mean"),
+    prop_dest_count=("booking_bool", "count"),
+).reset_index()
+
 global_click_full = dfTrain["click_bool"].mean()
 global_book_full = dfTrain["booking_bool"].mean()
 
-full_features = engineer_features(dfTrain, prop_stats_full, dest_stats_full, global_click_full, global_book_full)
-test_features_final = engineer_features(dfTest, prop_stats_full, dest_stats_full, global_click_full, global_book_full)
+full_features = engineer_features(dfTrain, prop_stats_full, dest_stats_full, prop_dest_stats_full, global_click_full, global_book_full)
+test_features_final = engineer_features(dfTest, prop_stats_full, dest_stats_full, prop_dest_stats_full, global_click_full, global_book_full)
 
 scaler_final = StandardScaler()
 X_full_scaled = scaler_final.fit_transform(full_features)
@@ -364,8 +392,7 @@ submission = pd.DataFrame({
     "pred": test_preds,
 }).sort_values(["srch_id", "pred"], ascending=[True, False])
 
-submission[["srch_id", "prop_id"]].to_csv("submission_logreg_v2.csv", index=False)
-print(f"  Saved submission_logreg_v2.csv ({len(submission):,} rows)")
+submission[["srch_id", "prop_id"]].to_csv("submission_logreg_v3.csv", index=False)
 
 # Save stats
 stats = {
@@ -374,12 +401,14 @@ stats = {
     "best_ndcg5": best_weight_ndcg,
     "all_tuning_results": all_results,
     "all_weight_results": weight_results,
-    "top_features": coef_df.head(10).to_dict("records"),
+    "top_features": coef_df.head(15).to_dict("records"),
     "features": feature_cols,
+    "n_features": len(feature_cols),
 }
-with open("model_stats_v2.json", "w") as f:
+with open("model_stats_v3.json", "w") as f:
     json.dump(stats, f, indent=2, default=str)
 
 print(f"\nBest validation NDCG@5: {best_weight_ndcg:.5f}")
 print(f"Best params: C={best_params['C']}, penalty={best_params['penalty']}")
 print(f"Best booking weight: {best_booking_weight}")
+print(f"Total features: {len(feature_cols)}")

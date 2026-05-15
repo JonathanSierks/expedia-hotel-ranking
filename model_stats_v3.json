@@ -1,0 +1,215 @@
+{
+  "best_params": {
+    "C": 0.01,
+    "penalty": "l1",
+    "ndcg5": 0.3287167001967248
+  },
+  "best_booking_weight": 5,
+  "best_ndcg5": 0.3287167001967248,
+  "all_tuning_results": [
+    {
+      "C": 0.001,
+      "penalty": "l1",
+      "ndcg5": 0.32868231666836867
+    },
+    {
+      "C": 0.001,
+      "penalty": "l2",
+      "ndcg5": 0.3286989138849925
+    },
+    {
+      "C": 0.01,
+      "penalty": "l1",
+      "ndcg5": 0.3287167001967248
+    },
+    {
+      "C": 0.01,
+      "penalty": "l2",
+      "ndcg5": 0.3286672147252265
+    },
+    {
+      "C": 0.1,
+      "penalty": "l1",
+      "ndcg5": 0.3287075893757608
+    },
+    {
+      "C": 0.1,
+      "penalty": "l2",
+      "ndcg5": 0.3287075893757608
+    },
+    {
+      "C": 1.0,
+      "penalty": "l1",
+      "ndcg5": 0.3287075893757608
+    },
+    {
+      "C": 1.0,
+      "penalty": "l2",
+      "ndcg5": 0.3287075893757608
+    },
+    {
+      "C": 10.0,
+      "penalty": "l1",
+      "ndcg5": 0.3287075893757608
+    },
+    {
+      "C": 10.0,
+      "penalty": "l2",
+      "ndcg5": 0.3287075893757608
+    }
+  ],
+  "all_weight_results": [
+    {
+      "booking_weight": 1,
+      "ndcg5": 0.32393445654772063
+    },
+    {
+      "booking_weight": 2,
+      "ndcg5": 0.3264034961625545
+    },
+    {
+      "booking_weight": 3,
+      "ndcg5": 0.32524510074985247
+    },
+    {
+      "booking_weight": 5,
+      "ndcg5": 0.3287167001967248
+    },
+    {
+      "booking_weight": 7,
+      "ndcg5": 0.3278780011494407
+    },
+    {
+      "booking_weight": 10,
+      "ndcg5": 0.32618782480475444
+    },
+    {
+      "booking_weight": 15,
+      "ndcg5": 0.3240049252970625
+    },
+    {
+      "booking_weight": 20,
+      "ndcg5": 0.3235190486410932
+    }
+  ],
+  "top_features": [
+    {
+      "feature": "prop_dest_book_rate",
+      "coefficient": 0.2504279613494873
+    },
+    {
+      "feature": "prop_click_rate",
+      "coefficient": 0.12062764912843704
+    },
+    {
+      "feature": "prop_book_rate",
+      "coefficient": 0.10848099738359451
+    },
+    {
+      "feature": "price_rank_in_search",
+      "coefficient": -0.06260859221220016
+    },
+    {
+      "feature": "search_size",
+      "coefficient": -0.058738429099321365
+    },
+    {
+      "feature": "location2_rank_in_search",
+      "coefficient": -0.0453365184366703
+    },
+    {
+      "feature": "prop_location_score2",
+      "coefficient": 0.03326312080025673
+    },
+    {
+      "feature": "promotion_flag",
+      "coefficient": 0.03280378133058548
+    },
+    {
+      "feature": "is_cheapest",
+      "coefficient": 0.031696878373622894
+    },
+    {
+      "feature": "star_rank_in_search",
+      "coefficient": -0.03163593262434006
+    },
+    {
+      "feature": "review_rank_in_search",
+      "coefficient": -0.03143496811389923
+    },
+    {
+      "feature": "price_vs_mean",
+      "coefficient": -0.03125002607703209
+    },
+    {
+      "feature": "location_x_stars",
+      "coefficient": 0.03068229742348194
+    },
+    {
+      "feature": "price_vs_median",
+      "coefficient": -0.028058210387825966
+    },
+    {
+      "feature": "prop_starrating",
+      "coefficient": 0.015625188127160072
+    }
+  ],
+  "features": [
+    "prop_starrating",
+    "prop_review_score",
+    "prop_brand_bool",
+    "prop_location_score1",
+    "prop_location_score2",
+    "prop_log_historical_price",
+    "price_usd",
+    "promotion_flag",
+    "srch_length_of_stay",
+    "srch_booking_window",
+    "srch_adults_count",
+    "srch_children_count",
+    "srch_room_count",
+    "srch_saturday_night_bool",
+    "orig_destination_distance",
+    "srch_query_affinity_score",
+    "missing_visitor_hist",
+    "missing_review_score",
+    "missing_distance",
+    "missing_affinity",
+    "visitor_hist_starrating",
+    "visitor_hist_adr_usd",
+    "star_diff",
+    "price_diff_hist",
+    "price_vs_mean",
+    "price_vs_median",
+    "price_rank_in_search",
+    "is_cheapest",
+    "star_rank_in_search",
+    "review_rank_in_search",
+    "location2_rank_in_search",
+    "location_combined",
+    "search_size",
+    "comp_rate_cheaper_count",
+    "comp_rate_expensive_count",
+    "comp_rate_available_count",
+    "comp_no_inventory_count",
+    "price_per_person",
+    "total_cost",
+    "price_vs_historical",
+    "price_per_night",
+    "star_per_dollar",
+    "price_x_stars",
+    "price_x_review",
+    "price_x_location",
+    "window_x_price",
+    "location_x_stars",
+    "prop_click_rate",
+    "prop_book_rate",
+    "prop_count",
+    "dest_click_rate",
+    "dest_book_rate",
+    "dest_count",
+    "prop_dest_book_rate",
+    "prop_dest_count"
+  ],
+  "n_features": 55
+}
