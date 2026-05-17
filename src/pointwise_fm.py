@@ -47,30 +47,92 @@ from torchfm.model.fm import FactorizationMachineModel
 # Auskommentieren / ergaenzen nach Bedarf.
 # ----------------------------------------------------------------------
 FEATURES = {
-    # --- selbst gebaute Ranking-/Gruppen-Features ---
-    "price_rank_in_group":       "num",
-    "price_group_median_ratio":  "num",
-    "price_group_mean_diff":     "num",
-    "star_rank":                 "num",
-    "price_diff_rank":           "num",
-    "price_vs_historical_diff":  "num",
-    "prop_log_price_usd":        "num",
-    "location_score1_bucket":    "cat",
-    "location_score2_bucket":    "cat",
-    "prop_id_encoded":           "cat",
-    "srch_destination_id_encoded": "cat",
-    "srch_room_count_encoded":   "cat",
-    # --- ein paar gut geeignete Basis-Features ---
-    "prop_starrating":           "cat",
-    "prop_review_score":         "num",
-    "prop_brand_bool":           "cat",
-    "promotion_flag":            "cat",
-    "prop_log_historical_price": "num",
-    "srch_length_of_stay":       "num",
-    "srch_booking_window":       "num",
-    "srch_adults_count":         "num",
-    "srch_saturday_night_bool":  "cat",
+    # --- selbst gebaute Ranking-Features ---
+    "price_rank_in_group":          "num",
+    "price_pct_rank":               "num",
+    "price_zscore":                 "num",
+    "price_diff_from_query_mean":   "num",
+    "log_price_diff_from_mean":     "num",
+    "log_price_zscore":             "num",
+    "star_pct_rank":                "num",
+    "star_rank":                    "num",
+    "star_diff_from_mean":          "num",
+    "review_pct_rank":              "num",
+    "review_diff_from_mean":        "num",
+    "location_pct_rank1":           "num",
+    "location_pct_rank2":           "num",
+    "location_diff_from_mean1":     "num",
+    "location_diff_from_mean2":     "num",
+    "price_diff_rank":              "num",
+    "price_vs_historical_diff":     "num",
+    "cheapest_hotel_flag":          "cat",
+    # --- Composite Features ---
+    "ump":                          "num",
+    "price_diff":                   "num",
+    "starrating_diff":              "num",
+    "per_fee":                      "num",
+    "total_fee":                    "num",
+    "score1d2":                     "num",
+    "room_window":                  "num",
+    # --- Visitor alignment ---
+    "star_rating_alignment":        "num",
+    "price_alignment":              "num",
+    # --- Competitor ---
+    "num_comp_cheaper":             "num",
+    "num_comp_more_expensive":      "num",
+    "competitor_availability_pressure": "num",
+    "avg_comp_price_diff":          "num",
+    "avg_comp_price_diff_missing":  "cat",
+    # --- Travel party ---
+    "family_trip_flag":             "cat",
+    "group_travel_size":            "num",
+    "guests_per_room":              "num",
+    # --- Temporal ---
+    "search_month":                 "cat",
+    "search_day_of_week":           "cat",
+    "search_hour":                  "cat",
+    "checkin_month":                "cat",
+    "checkin_day_of_week":          "cat",
+    # --- Basis-Features ---
+    "prop_starrating":              "cat",
+    "prop_review_score":            "num",
+    "prop_brand_bool":              "cat",
+    "promotion_flag":               "cat",
+    "prop_log_historical_price":    "num",
+    "log_price_usd":           "num",
+    "srch_length_of_stay":          "num",
+    "srch_booking_window":          "num",
+    "srch_adults_count":            "num",
+    "srch_saturday_night_bool":     "cat",
+    "srch_query_affinity_score":    "num",
+    "orig_destination_distance":    "num",
+    # --- Target-Encodings (nach Split berechnet) ---
+    "prop_booking_rate":            "num",
+    "prop_click_rate":              "num",
+    "dest_booking_rate":            "num",
+    "site_booking_rate":            "num",
+    # --- Prop-level Aggregate (Jahrer) ---
+    "prop_price_usd_mean":          "num",
+    "prop_price_usd_std":           "num",
+    "prop_prop_review_score_mean":       "num",
+    "prop_prop_location_score1_mean":    "num",
+    "prop_prop_location_score2_mean":    "num",
+    "prop_count":                   "num",
+    # --- Missingness Flags ---
+    "visitor_history_star_missing": "cat",
+    "visitor_history_price_missing":"cat",
+    "missing_star_rating_flag":     "cat",
+    "review_score_missing_flag":    "cat",
+    "affinity_score_missing_flag":  "cat",
+    "distance_missing_flag":        "cat",
+    "location_score2_missing_flag": "cat",
+    # --- ID-Features ---
+    "site_id":                      "cat",
+    "prop_country_id":              "cat",
+    "visitor_location_country_id":  "cat",
+    "prop_brand_bool":              "cat",
 }
+
 GROUP_COL = "srch_id"
 RELEVANCE_COL = "relevance"   # gradierte Relevanz, nur fuer NDCG
 
@@ -143,7 +205,7 @@ def ndcg_at_k(relevance, scores, groups, k=5):
 # Training: pointwise BCE + Early Stopping auf Val-NDCG
 # ----------------------------------------------------------------------
 def train_fm(X_tr, y_tr, X_va, df_val, field_dims,
-             embed_dim=16, batch_size=4096, epochs=20, patience=3,
+             embed_dim=32, batch_size=4096, epochs=40, patience=7,
              lr=1e-3, l2=1e-5, ndcg_k=5, device=None):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     rel_va = df_val[RELEVANCE_COL].to_numpy(dtype="float64")
