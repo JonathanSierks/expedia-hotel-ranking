@@ -1,4 +1,3 @@
-
 import polars as pl
 from pathlib import Path 
 
@@ -304,6 +303,144 @@ def missing_values(df, name):
 
 missing_values(train_df, "training dataset")
 missing_values(test_df, "test dataset")
+
+# ##################################
+#  Numerical summary statistics
+# ##################################
+
+def numerical_summary(df, name):
+
+    print("\n")
+    print("=" * 120)
+    print(f"NUMERICAL SUMMARY: {name.upper()}")
+    print("=" * 120)
+
+    numeric_types = {
+        pl.Int8, pl.Int16, pl.Int32, pl.Int64,
+        pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64,
+        pl.Float32, pl.Float64
+    }
+
+    numeric_cols = [
+        col for col in df.columns
+        if df[col].dtype in numeric_types
+    ]
+
+    rows = []
+
+    for col in numeric_cols:
+
+        series = df[col]
+
+        rows.append({
+            "variable": col,
+            "missing_count": series.null_count(),
+            "missing_fraction": round(series.null_count() / len(df), 6),
+
+            "mean": series.mean(),
+            "std": series.std(),
+            "min": series.min(),
+
+            "q001": series.quantile(0.001),
+            "q01": series.quantile(0.01),
+            "q25": series.quantile(0.25),
+            "median": series.median(),
+            "q75": series.quantile(0.75),
+            "q99": series.quantile(0.99),
+            "q999": series.quantile(0.999),
+
+            "max": series.max(),
+        })
+
+    summary_df = (
+        pl.DataFrame(rows)
+        .sort("missing_fraction", descending=True)
+    )
+
+    print(summary_df)
+
+    return summary_df
+
+
+train_summary = numerical_summary(train_df, "training dataset")
+test_summary = numerical_summary(test_df, "test dataset")
+
+# ##################################
+#  Boolean variable summary
+# ##################################
+
+def boolean_summary(df, name, bool_columns):
+
+    print("\n")
+    print("=" * 100)
+    print(f"BOOLEAN SUMMARY: {name.upper()}")
+    print("=" * 100)
+
+    rows = []
+
+    n = len(df)
+
+    for col in bool_columns:
+
+        if col not in df.columns:
+            print(f"WARNING: {col} not found in dataframe")
+            continue
+
+        count_0 = df.filter(pl.col(col) == 0).height
+        count_1 = df.filter(pl.col(col) == 1).height
+
+        rows.append({
+            "variable": col,
+
+            "count_0": count_0,
+            "fraction_0": round(count_0 / n, 6),
+
+            "count_1": count_1,
+            "fraction_1": round(count_1 / n, 6),
+        })
+
+    summary_df = pl.DataFrame(rows)
+
+    print(summary_df)
+
+    return summary_df
+
+
+# =====================================
+# train boolean variables
+# =====================================
+
+train_bool_cols = [
+    "prop_brand_bool",
+    "promotion_flag",
+    "srch_saturday_night_bool",
+    "random_bool",
+    "click_bool",
+    "booking_bool"
+]
+
+# =====================================
+# test boolean variables
+# =====================================
+
+test_bool_cols = [
+    "prop_brand_bool",
+    "promotion_flag",
+    "srch_saturday_night_bool",
+    "random_bool"
+]
+
+train_bool_summary = boolean_summary(
+    train_df,
+    "training dataset",
+    train_bool_cols
+)
+
+test_bool_summary = boolean_summary(
+    test_df,
+    "test dataset",
+    test_bool_cols
+)
 
 # #################################################
 #  Convert datatime
