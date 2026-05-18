@@ -562,7 +562,7 @@
 # print(f"Unique queries   : {submission['srch_id'].n_unique():,}")
 
 """
-predict.py
+final_model.py
 ==========
 Trains the final LambdaMART model on the combined train+val split
 using the best hyperparameters found by train.py, then generates
@@ -711,13 +711,20 @@ def align_schemas(train_df, val_df):
     return val_df
 
 # =========================================================
-# LOAD PARAMS
+# LOAD TOP-10 PARAMS
 # =========================================================
 
 if USE_MANUAL:
-    best_params   = MANUAL_PARAMS
-    best_iter     = MANUAL_BEST_ITERATION
-    print("Using manually specified hyperparameters.")
+    # Wrap single manual config in a list so the loop below
+    # works identically whether manual or loaded from file
+    top10_trials = [{
+        "trial":          -1,
+        "val_ndcg":       0.0,
+        "best_iteration": MANUAL_BEST_ITERATION,
+        "boosting_type":  MANUAL_PARAMS.get("boosting_type", "gbdt"),
+        "params":         MANUAL_PARAMS,
+    }]
+    print("Using manually specified hyperparameters (1 model).")
 else:
     if not PARAMS_PATH.exists():
         raise FileNotFoundError(
@@ -725,18 +732,17 @@ else:
             "Run train.py first, or set USE_MANUAL=True and fill in MANUAL_PARAMS."
         )
     with open(PARAMS_PATH) as f:
-        results = json.load(f)
-    best_params = results["best_params"]
-    best_iter   = results["best_iteration"]
-    print(f"Loaded params from {PARAMS_PATH}")
-    print(f"  Best val NDCG@5 : {results['best_val_ndcg']:.5f}")
-    print(f"  Train/val gap   : {results['best_gap']:+.5f}")
+        top10_trials = json.load(f)
 
-print(f"\nBest params: {best_params}")
-print(f"Best iteration: {best_iter}")
+    print(f"Loaded {len(top10_trials)} trial configs from {PARAMS_PATH}")
+    for i, t in enumerate(top10_trials):
+        print(f"  #{i+1}  trial={t['trial']}  "
+              f"val={t['val_ndcg']:.5f}  "
+              f"iter={t['best_iteration']}  "
+              f"[{t.get('boosting_type', 'gbdt')}]")
 
 # =========================================================
-# LOAD DATA
+# LOAD DATA  (once, reused for all 10 models)
 # =========================================================
 
 print("\nLoading parquet files...")
@@ -750,16 +756,6 @@ print(f"  test_df     : {len(test_df):,} rows")
 
 # =========================================================
 # COMBINE TRAIN + VAL
-#
-# The Float32/Float64 schema mismatch fix:
-#   - train_split has prop_booking_rate_oof / prop_ctr_oof
-#     as Float32 (written by np.full(..., dtype=np.float32))
-#   - val_split has those columns as Float64 (from a Polars
-#     join, which defaults to Float64 for float literals)
-#   - pl.concat is strict: both frames must have identical
-#     dtypes per column.
-#   Fix: cast val_split columns to match train_split dtypes
-#   before concatenating.
 # =========================================================
 
 print("\nAligning schemas (fixing Float32/Float64 mismatch)...")
@@ -770,7 +766,7 @@ print(f"  Combined    : {len(train_combined):,} rows | "
       f"{train_combined['srch_id'].n_unique():,} queries")
 
 # =========================================================
-# PREPARE FEATURES
+# PREPARE FEATURES  (once, reused for all 10 models)
 # =========================================================
 
 feature_cols = get_feature_cols(train_combined)
@@ -780,71 +776,84 @@ X_full     = to_pandas_with_cats(train_combined, feature_cols)
 y_full     = train_combined["relevance"].to_numpy()
 full_group = make_group(train_combined)
 
-# =========================================================
-# FINAL MODEL
-# =========================================================
-
-final_params = dict(best_params)
-final_params.update({
-    "objective":              "lambdarank",
-    "metric":                 "ndcg",
-    "ndcg_eval_at":           [5],
-    "label_gain":             [0, 1, 0, 0, 0, 5],
-    "lambdarank_truncation_level": 10,
-    "verbosity":              -1,
-    "seed":                   42,
-    "num_threads":            N_CORES,
-    "feature_pre_filter":     False,
-})
-
-boosting_type = final_params.get("boosting_type", "gbdt")
-print(f"\nBoosting type: {boosting_type}")
-print(f"Training final model on {len(train_combined):,} rows "
-      f"for {best_iter} rounds...")
-
-# For DART: log_evaluation every 100 rounds so you can watch progress.
-# For GBDT: same. Neither uses early stopping here since we train for
-# the exact best_iter found during the Optuna search.
-final_model = lgb.train(
-    final_params,
-    lgb.Dataset(X_full, label=y_full, group=full_group),
-    num_boost_round=best_iter,
-    callbacks=[lgb.log_evaluation(100)],
-)
-
-# Save model so you can reload it later without retraining
-final_model.save_model(str(MODEL_PATH))
-print(f"Model saved to: {MODEL_PATH}")
-
-# =========================================================
-# FEATURE IMPORTANCE
-# =========================================================
-
-importance = pd.DataFrame({
-    "feature":    final_model.feature_name(),
-    "importance": final_model.feature_importance(importance_type="gain"),
-}).sort_values("importance", ascending=False)
-
-print(f"\nTop 30 features by gain ({len(importance)} total):")
-print(importance.head(30).to_string(index=False))
-
-# =========================================================
-# SUBMISSION
-# =========================================================
-
-print("\nGenerating predictions on test set...")
 test_sorted = test_df.sort("srch_id")
 X_test      = to_pandas_with_cats(test_sorted, feature_cols)
-test_pred   = final_model.predict(X_test)
 
-submission = (
-    test_sorted.select(["srch_id", "prop_id"])
-    .with_columns(pl.Series("prediction", test_pred))
-    .sort(["srch_id", "prediction"], descending=[False, True])
-    .select(["srch_id", "prop_id"])
-)
+# =========================================================
+# TRAIN TOP-10 MODELS + GENERATE SUBMISSIONS
+# =========================================================
 
-submission.write_csv(SUBMISSION_PATH)
-print(f"\nSubmission saved : {SUBMISSION_PATH}")
-print(f"Rows             : {len(submission):,}")
-print(f"Unique queries   : {submission['srch_id'].n_unique():,}")
+print(f"\n{'='*70}")
+print(f"Training {len(top10_trials)} models and generating submissions...")
+print(f"{'='*70}")
+
+for rank, trial_info in enumerate(top10_trials, start=1):
+
+    trial_num    = trial_info["trial"]
+    val_ndcg     = trial_info["val_ndcg"]
+    best_iter    = trial_info["best_iteration"]
+    boosting     = trial_info.get("boosting_type", "gbdt")
+    trial_params = trial_info["params"]
+
+    print(f"\n[{rank}/10] trial={trial_num}  val={val_ndcg:.5f}  "
+          f"iter={best_iter}  [{boosting}]")
+
+    # Build full param dict
+    final_params = dict(trial_params)
+    final_params.update({
+        "objective":               "lambdarank",
+        "metric":                  "ndcg",
+        "ndcg_eval_at":            [5],
+        "label_gain":              [0, 1, 0, 0, 0, 5],
+        "lambdarank_truncation_level": 10,
+        "verbosity":               -1,
+        "seed":                    42,
+        "num_threads":             N_CORES,
+        "feature_pre_filter":      False,
+    })
+    # Ensure boosting_type is set (may live in params or top-level)
+    if "boosting_type" not in final_params:
+        final_params["boosting_type"] = boosting
+
+    print(f"  Training on {len(train_combined):,} rows for {best_iter} rounds...")
+    model = lgb.train(
+        final_params,
+        lgb.Dataset(X_full, label=y_full, group=full_group),
+        num_boost_round=best_iter,
+        callbacks=[lgb.log_evaluation(200)],
+    )
+
+    # Save model
+    model_file = BASE_DIR / "submissions" / f"model_rank{rank:02d}_trial{trial_num}.txt"
+    model.save_model(str(model_file))
+    print(f"  Model saved: {model_file.name}")
+
+    # Feature importance for rank-1 model only (avoid wall of text)
+    if rank == 1:
+        importance = pd.DataFrame({
+            "feature":    model.feature_name(),
+            "importance": model.feature_importance(importance_type="gain"),
+        }).sort_values("importance", ascending=False)
+        print(f"\n  Top 20 features by gain ({len(importance)} total):")
+        print(importance.head(20).to_string(index=False))
+
+    # Generate submission
+    test_pred  = model.predict(X_test)
+    submission = (
+        test_sorted.select(["srch_id", "prop_id"])
+        .with_columns(pl.Series("prediction", test_pred))
+        .sort(["srch_id", "prediction"], descending=[False, True])
+        .select(["srch_id", "prop_id"])
+    )
+
+    sub_file = (BASE_DIR / "submissions" /
+                f"submission_rank{rank:02d}_trial{trial_num}_val{val_ndcg:.5f}.csv")
+    submission.write_csv(sub_file)
+    print(f"  Submission: {sub_file.name}  "
+          f"({len(submission):,} rows, "
+          f"{submission['srch_id'].n_unique():,} queries)")
+
+print(f"\n{'='*70}")
+print(f"Done. {len(top10_trials)} submission files saved to:")
+print(f"  {BASE_DIR / 'submissions'}/")
+print(f"{'='*70}")
