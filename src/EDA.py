@@ -20,6 +20,7 @@ DATA_FEATURED_DIR = BASE_DIR / "data" / "featured"
 DATA_FEATURED_TRAIN_PATH = DATA_FEATURED_DIR / "train_features.parquet"
 DATA_FEATURED_TEST_PATH = DATA_FEATURED_DIR / "test_features.parquet"
 
+
 print("Loading featured engineerd data...")
 train_df = pl.read_parquet(DATA_FEATURED_TRAIN_PATH)
 test_df = pl.read_parquet(DATA_FEATURED_TEST_PATH)
@@ -412,7 +413,7 @@ numeric_cols = [
     col for col, dtype in df.schema.items()
     if dtype in [pl.Float32, pl.Float64, pl.Int8, pl.Int16, pl.Int32, pl.Int64]
 ]
-
+# check how spearman looks
 corr_df = df.select(numeric_cols).to_pandas().corr()
 
 # remove inf/nan

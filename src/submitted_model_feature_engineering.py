@@ -188,7 +188,7 @@ def engineer_features(df):
     # Temporal features
     # ----------------------------------------------------------
     df = df.with_columns([
-        pl.col("date_time").dt.month().cast(pl.Int8).alias("search_month"),
+        pl.col("date_time").dt.month().cast(pl.Int8).alias(""),
         pl.col("date_time").dt.weekday().cast(pl.Int8).alias("search_day_of_week"),
         pl.col("date_time").dt.hour().cast(pl.Int8).alias("search_hour"),
     ])
@@ -513,7 +513,7 @@ combined_for_prop_agg = pl.concat([
     test_df.select(common_cols),
 ])
 
-prop_numeric_aggs = compute_prop_numeric_aggs(combined_for_prop_agg)
+prop_numeric_aggs = compute_prop_numeric_aggs(w)
 
 train_split_df = train_split_df.join(prop_numeric_aggs, on="prop_id", how="left")
 val_split_df   = val_split_df.join(prop_numeric_aggs,   on="prop_id", how="left")
@@ -545,9 +545,6 @@ train_split_df = train_split_df.join(prop_pos_train, on="prop_id", how="left")
 val_split_df   = val_split_df.join(prop_pos_train,   on="prop_id", how="left")
 test_df        = test_df.join(prop_pos_full,          on="prop_id", how="left")
 
-# Rank of hotel's typical position within the current query context
-for df_ref, name in [(train_split_df, "train"), (val_split_df, "val"), (test_df, "test")]:
-    pass  # applied below
 
 def add_position_rank(df):
     if "prop_avg_position" in df.columns:

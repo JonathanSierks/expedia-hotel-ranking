@@ -501,8 +501,14 @@ def print_dtype_report(dtype_report, name):
     )
     print("=" * 100)
 
-# print_dtype_report(train_report, "train")
-# print_dtype_report(test_report, "test")
+print_dtype_report(train_report, "train")
+print_dtype_report(test_report, "test")
+
+print('train estimated memory size after casting:')
+print(train_df.estimated_size("mb"), "MB")
+
+print('test estimated memory size after casting:')
+print(test_df.estimated_size("mb"), "MB")
 
 # #################################################
 #  Compress & Save data in Parquet
@@ -512,5 +518,6 @@ print('Converting data to parquet...')
 
 train_df.write_parquet(DATA_PROCESSED_DIR / "training_set_VU_DM.parquet")
 test_df.write_parquet(DATA_PROCESSED_DIR / "test_set_VU_DM.parquet")
+
 
 print('Completed data loading & intial preprocessing!')
