@@ -414,7 +414,7 @@ numeric_cols = [
     if dtype in [pl.Float32, pl.Float64, pl.Int8, pl.Int16, pl.Int32, pl.Int64]
 ]
 # check how spearman looks
-corr_df = df.select(numeric_cols).to_pandas().corr()
+corr_df = df.select(numeric_cols).to_pandas().corr(method='spearman')
 
 # remove inf/nan
 corr_df = corr_df.replace([np.inf, -np.inf], np.nan)
@@ -425,31 +425,54 @@ corr_df = corr_df.fillna(0)
 valid_cols = corr_df.columns[corr_df.std() > 0]
 corr_df = corr_df.loc[valid_cols, valid_cols]
 
-plt.figure(figsize=(18, 14))
+# plt.figure(figsize=(18, 14))
 
-sns.heatmap(
+# sns.heatmap(
+#     corr_df,
+#     cmap="coolwarm",
+#     center=0,
+#     vmin=-1,
+#     vmax=1,
+#     linewidths=0
+# )
+
+# plt.title("Full Feature Correlation Heatmap")
+# plt.show()
+
+
+# plt.figure(figsize=(18, 14))
+# sns.clustermap(
+#     corr_df,
+#     cmap="coolwarm",
+#     center=0,
+#     figsize=(18, 18),
+#     method="average",
+#     metric="euclidean"
+# )
+# plt.title("Full Clustered Feature Correlation Heatmap")
+# plt.show()
+
+g = sns.clustermap(
     corr_df,
     cmap="coolwarm",
     center=0,
-    vmin=-1,
-    vmax=1,
-    linewidths=0
-)
-
-plt.title("Full Feature Correlation Heatmap")
-plt.show()
-
-
-plt.figure(figsize=(18, 14))
-sns.clustermap(
-    corr_df,
-    cmap="coolwarm",
-    center=0,
-    figsize=(18, 18),
+    figsize=(24, 24),      # larger figure
     method="average",
-    metric="euclidean"
+    metric="euclidean",
+    xticklabels=True,      # force all labels to show
+    yticklabels=True,
 )
-plt.title("Full Clustered Feature Correlation Heatmap")
+g.ax_heatmap.set_xticklabels(
+    g.ax_heatmap.get_xticklabels(),
+    fontsize=6,            # smaller font
+    rotation=90
+)
+g.ax_heatmap.set_yticklabels(
+    g.ax_heatmap.get_yticklabels(),
+    fontsize=6,
+    rotation=0
+)
+plt.savefig("clustermap.png", bbox_inches="tight", dpi=150)
 plt.show()
 
 
