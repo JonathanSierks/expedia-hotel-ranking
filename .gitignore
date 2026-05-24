@@ -1,8 +1,8 @@
 # Data
-data/*
+LambdaMART/data/
 
 # Virtual environment
-venv/
+LambdaMART/venv/
 
 # Submission files
-submissions/
+LambdaMART/submissions/
