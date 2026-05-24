@@ -3,3 +3,6 @@ data/*
 
 # Virtual environment
 venv/
+
+# Submission files
+submissions/
